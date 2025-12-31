@@ -1,12 +1,28 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { pool } from '../../../../lib/db.js';
+// Dynamic import of pool will be used in each handler to avoid DB connections in demo mode
 import { getUserFromRequest } from '../../../../lib/auth.js';
+import { isDemo, readDemo, writeDemo } from '../../../../lib/demoStore.js';
 
+export const runtime = 'nodejs';
+
+// Schema for updating a task. If due_date is provided, ensure it is not in the past.
 const updateSchema = z.object({
-  title: z.string().min(1).optional(),
+  title: z.string().min(1, { message: 'Il titolo è obbligatorio' }).optional(),
   description: z.string().optional().nullable(),
-  due_date: z.string().optional().nullable(),
+  due_date: z
+    .string()
+    .min(1, { message: 'La data di scadenza è obbligatoria' })
+    .refine((val) => {
+      if (val === undefined || val === null) return true;
+      const date = new Date(val);
+      if (Number.isNaN(date.getTime())) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return date >= today;
+    }, { message: 'La data non può essere nel passato' })
+    .optional()
+    .nullable(),
   status: z.enum(['pending', 'completed']).optional(),
 });
 
@@ -16,7 +32,18 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
   }
   const { id } = params;
+  // Demo mode: restituisce il task dal file JSON
+  if (isDemo()) {
+    const data = await readDemo();
+    const task = data.tasks.find((t) => t.id === id && t.user_id === user.id);
+    if (!task) {
+      return NextResponse.json({ error: 'Task non trovato' }, { status: 404 });
+    }
+    return NextResponse.json(task);
+  }
   try {
+    // Import pool dynamically only when not in demo mode
+    const { pool } = await import('../../../../lib/db.js');
     const client = await pool.connect();
     try {
       const res = await client.query(
@@ -45,10 +72,31 @@ export async function PUT(request, { params }) {
   const body = await request.json();
   const parse = updateSchema.safeParse(body);
   if (!parse.success) {
-    return NextResponse.json({ error: 'Dati non validi' }, { status: 400 });
+    const { validationErrorResponse } = await import('../../../../lib/validate.js');
+    return validationErrorResponse(parse.error);
   }
   const { title, description, due_date, status } = parse.data;
+
+  // Demo mode: aggiorna un task nel file JSON
+  if (isDemo()) {
+    const data = await readDemo();
+    const taskIndex = data.tasks.findIndex((t) => t.id === id && t.user_id === user.id);
+    if (taskIndex === -1) {
+      return NextResponse.json({ error: 'Task non trovato' }, { status: 404 });
+    }
+    const existing = data.tasks[taskIndex];
+    // Aggiorna solo i campi presenti
+    if (title !== undefined) existing.title = title;
+    if (description !== undefined) existing.description = description ?? null;
+    if (due_date !== undefined) existing.due_date = due_date ?? null;
+    if (status !== undefined) existing.status = status;
+    data.tasks[taskIndex] = existing;
+    await writeDemo(data);
+    return NextResponse.json(existing);
+  }
   try {
+    // Import pool dynamically only when not in demo mode
+    const { pool } = await import('../../../../lib/db.js');
     const client = await pool.connect();
     try {
       // Verifica proprietario
@@ -85,7 +133,20 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
   }
   const { id } = params;
+  // Demo mode: elimina un task dal file JSON
+  if (isDemo()) {
+    const data = await readDemo();
+    const taskIndex = data.tasks.findIndex((t) => t.id === id && t.user_id === user.id);
+    if (taskIndex === -1) {
+      return NextResponse.json({ error: 'Task non trovato' }, { status: 404 });
+    }
+    data.tasks.splice(taskIndex, 1);
+    await writeDemo(data);
+    return NextResponse.json({ success: true });
+  }
   try {
+    // Import pool dynamically only when not in demo mode
+    const { pool } = await import('../../../../lib/db.js');
     const client = await pool.connect();
     try {
       const res = await client.query('DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id', [id, user.id]);

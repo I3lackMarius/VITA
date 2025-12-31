@@ -8,11 +8,21 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+
+  // Validazione lato client
+  const isNameValid = name.trim().length > 0;
+  const isEmailValid = email.includes('@');
+  const isPasswordValid = password.length >= 6;
+  const isFormValid = isNameValid && isEmailValid && isPasswordValid;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    // Non procedere se il form è invalido
+    if (!isFormValid || submitting) return;
+    setSubmitting(true);
+    setErrors({});
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
@@ -21,7 +31,13 @@ export default function Register() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Errore durante la registrazione');
+        // Mappa gli errori di validazione dal backend
+        if (data.errorCode === 'VALIDATION_ERROR' && data.fields) {
+          setErrors(data.fields);
+        } else {
+          setErrors({ form: data.message || 'Errore durante la registrazione' });
+        }
+        setSubmitting(false);
         return;
       }
       // Dopo la registrazione effettua il login automatico
@@ -40,14 +56,16 @@ export default function Register() {
         router.push('/login');
       }
     } catch (err) {
-      setError('Si è verificato un errore. Riprova.');
+      setErrors({ form: 'Si è verificato un errore. Riprova.' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
     <main className="container" style={{ maxWidth: '400px', marginTop: '3rem' }}>
       <h2>Registrati su VITA</h2>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {errors.form && <p style={{ color: 'red' }}>{errors.form}</p>}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
         <label htmlFor="name" style={{ marginTop: '1rem' }}>Nome</label>
         <input
@@ -55,28 +73,40 @@ export default function Register() {
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          required
           style={inputStyle}
         />
+        {!isNameValid && <small style={{ color: 'red' }}>Il nome è obbligatorio</small>}
+        {errors.name && <small style={{ color: 'red' }}>{errors.name.join(', ')}</small>}
+
         <label htmlFor="email" style={{ marginTop: '1rem' }}>Email</label>
         <input
           id="email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          required
           style={inputStyle}
         />
+        {!isEmailValid && email && <small style={{ color: 'red' }}>Inserisci un'email valida</small>}
+        {errors.email && <small style={{ color: 'red' }}>{errors.email.join(', ')}</small>}
+
         <label htmlFor="password" style={{ marginTop: '1rem' }}>Password</label>
         <input
           id="password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          required
           style={inputStyle}
         />
-        <button type="submit" style={{ ...buttonStyle, marginTop: '1.5rem' }}>Registrati</button>
+        {!isPasswordValid && password && <small style={{ color: 'red' }}>La password deve avere almeno 6 caratteri</small>}
+        {errors.password && <small style={{ color: 'red' }}>{errors.password.join(', ')}</small>}
+
+        <button
+          type="submit"
+          style={{ ...buttonStyle, marginTop: '1.5rem', opacity: isFormValid && !submitting ? 1 : 0.5 }}
+          disabled={!isFormValid || submitting}
+        >
+          {submitting ? 'Registrazione…' : 'Registrati'}
+        </button>
       </form>
     </main>
   );

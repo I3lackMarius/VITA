@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { pool } from '../../../lib/db.js';
+// We'll import pool dynamically when needed to avoid DB connection in demo mode
 import { getUserFromRequest } from '../../../lib/auth.js';
+import { isDemo, readDemo, writeDemo, newId } from '../../../lib/demoStore.js';
+
+// Enable Node.js runtime for demo mode
+export const runtime = 'nodejs';
 
 const habitSchema = z.object({
   name: z.string().min(1),
@@ -14,7 +18,31 @@ export async function GET(request) {
   if (!user) {
     return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
   }
+  // Demo mode: recupera abitudini e log dal file JSON
+  if (isDemo()) {
+    const data = await readDemo();
+    // Filtra le abitudini per l'utente
+    const habits = data.habits
+      .filter((h) => h.user_id === user.id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    // Costruisce la mappa dei log
+    const logsMap = {};
+    data.habit_logs
+      .filter((l) => l.user_id === user.id)
+      .forEach((log) => {
+        if (!logsMap[log.habit_id]) logsMap[log.habit_id] = [];
+        logsMap[log.habit_id].push({
+          id: log.id,
+          date: log.date,
+          count: log.count,
+        });
+      });
+    const habitsWithLogs = habits.map((h) => ({ ...h, logs: logsMap[h.id] || [] }));
+    return NextResponse.json({ habits: habitsWithLogs });
+  }
   try {
+    // Import pool dynamically only when not in demo mode
+    const { pool } = await import('../../../lib/db.js');
     const client = await pool.connect();
     try {
       // Recupera tutte le abitudini
@@ -58,10 +86,29 @@ export async function POST(request) {
   const body = await request.json();
   const parse = habitSchema.safeParse(body);
   if (!parse.success) {
-    return NextResponse.json({ error: 'Dati non validi' }, { status: 400 });
+    const { validationErrorResponse } = await import('../../../lib/validate.js');
+    return validationErrorResponse(parse.error);
   }
   const { name, description, target_count } = parse.data;
+
+  // Demo mode: aggiunge una nuova abitudine al file JSON
+  if (isDemo()) {
+    const data = await readDemo();
+    const habit = {
+      id: newId('h'),
+      user_id: user.id,
+      name,
+      description: description ?? null,
+      target_count: target_count ?? null,
+      created_at: new Date().toISOString(),
+    };
+    data.habits.unshift(habit);
+    await writeDemo(data);
+    return NextResponse.json(habit, { status: 201 });
+  }
   try {
+    // Import pool dynamically only when not in demo mode
+    const { pool } = await import('../../../lib/db.js');
     const client = await pool.connect();
     try {
       const res = await client.query(

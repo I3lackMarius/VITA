@@ -89,17 +89,29 @@ export default function Dashboard() {
                   type="checkbox"
                   checked={task.status === 'completed'}
                   onChange={async (e) => {
-                    // Aggiorna status
+                    const newStatus = e.target.checked ? 'completed' : 'pending';
                     const token = localStorage.getItem('vita-token');
-                    await fetch(`/api/tasks/${task.id}`, {
-                      method: 'PUT',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`,
-                      },
-                      body: JSON.stringify({ status: e.target.checked ? 'completed' : 'pending' }),
+                    // Salva stato precedente per rollback in caso di errore
+                    setTasks((prevTasks) => {
+                      return prevTasks.map((t) => t.id === task.id ? { ...t, status: newStatus } : t);
                     });
-                    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: e.target.checked ? 'completed' : 'pending' } : t));
+                    try {
+                      const res = await fetch(`/api/tasks/${task.id}`, {
+                        method: 'PUT',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ status: newStatus }),
+                      });
+                      if (!res.ok) {
+                        // rollback se fallisce
+                        setTasks((prevTasks) => prevTasks.map((t) => t.id === task.id ? { ...t, status: task.status } : t));
+                      }
+                    } catch (err) {
+                      // rollback per errore di rete
+                      setTasks((prevTasks) => prevTasks.map((t) => t.id === task.id ? { ...t, status: task.status } : t));
+                    }
                   }}
                   style={{ marginRight: '0.5rem' }}
                 />

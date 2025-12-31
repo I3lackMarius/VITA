@@ -8,11 +8,24 @@ export default function NewHabit() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [targetCount, setTargetCount] = useState(1);
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+
+  // Validazione client
+  const isNameValid = name.trim().length > 0;
+  const isTargetValid = (() => {
+    // Se targetCount è definito, deve essere >= 1
+    const num = Number(targetCount);
+    return Number.isInteger(num) && num > 0;
+  })();
+  const isFormValid = isNameValid && isTargetValid;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    // Non procedere se form invalido o in invio
+    if (!isFormValid || submitting) return;
+    setSubmitting(true);
+    setErrors({});
     const token = typeof window !== 'undefined' ? localStorage.getItem('vita-token') : null;
     try {
       const res = await fetch('/api/habits', {
@@ -25,19 +38,27 @@ export default function NewHabit() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Errore nella creazione dell\'abitudine');
+        // Mappa errori dal backend
+        if (data.errorCode === 'VALIDATION_ERROR' && data.fields) {
+          setErrors(data.fields);
+        } else {
+          setErrors({ form: data.message || data.error || 'Errore nella creazione dell\'abitudine' });
+        }
+        setSubmitting(false);
         return;
       }
       router.push('/dashboard');
     } catch (err) {
-      setError('Errore di rete');
+      setErrors({ form: 'Errore di rete' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
     <main className="container" style={{ maxWidth: '500px', marginTop: '2rem' }}>
       <h2>Nuova Abitudine</h2>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {errors.form && <p style={{ color: 'red' }}>{errors.form}</p>}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
         <label htmlFor="name" style={{ marginTop: '1rem' }}>Nome</label>
         <input
@@ -45,9 +66,14 @@ export default function NewHabit() {
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          required
           style={inputStyle}
         />
+        {!isNameValid && name && (
+          <small style={{ color: 'red' }}>Il nome è obbligatorio</small>
+        )}
+        {errors.name && (
+          <small style={{ color: 'red' }}>{errors.name.join(', ')}</small>
+        )}
         <label htmlFor="description" style={{ marginTop: '1rem' }}>Descrizione</label>
         <textarea
           id="description"
@@ -65,7 +91,19 @@ export default function NewHabit() {
           onChange={(e) => setTargetCount(e.target.value)}
           style={inputStyle}
         />
-        <button type="submit" style={{ ...buttonStyle, marginTop: '1.5rem' }}>Salva</button>
+        {!isTargetValid && targetCount !== '' && (
+          <small style={{ color: 'red' }}>Il target deve essere un numero positivo</small>
+        )}
+        {errors.target_count && (
+          <small style={{ color: 'red' }}>{errors.target_count.join(', ')}</small>
+        )}
+        <button
+          type="submit"
+          style={{ ...buttonStyle, marginTop: '1.5rem', opacity: isFormValid && !submitting ? 1 : 0.5 }}
+          disabled={!isFormValid || submitting}
+        >
+          {submitting ? 'Salvataggio…' : 'Salva'}
+        </button>
       </form>
     </main>
   );

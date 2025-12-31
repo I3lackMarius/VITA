@@ -72,16 +72,51 @@ vita/
    ```
    DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vita_db
    JWT_SECRET=unsegretoverystrong
+
    ```
 
-4. **Installa le dipendenze**.
+4. **[Facoltativo] Attiva la modalità demo (senza Docker né database)**.
+
+   Se vuoi provare VITA rapidamente senza installare PostgreSQL o avviare Docker, puoi attivare la modalità demo. In questa modalità i dati vengono letti e salvati su un file locale (`demo-data.json`) e l'app funziona anche senza connessione al database.
+
+   Per attivarla:
+
+   ```bash
+   cd ../apps/web
+   cp .env.example .env
+   # abilita la demo impostando DEMO_MODE=true e lascia vuoto DATABASE_URL
+   echo "DEMO_MODE=true" >> .env
+   # (opzionale) imposta un JWT_SECRET a tua scelta
+   echo "JWT_SECRET=demo_secret" >> .env
+   ```
+
+   A questo punto è sufficiente installare le dipendenze e avviare l'app (vedi i punti 5 e 6). La modalità demo supporta login/registrazione, CRUD dei task, CRUD delle abitudini e logging giornaliero, senza richiedere PostgreSQL né Docker. Tutti i dati restano salvati localmente nel file `demo-data.json`.
+
+### Regole di validazione dell'MVP
+
+L'applicazione applica una serie di regole di validazione sia lato client che lato server per evitare errori banali e garantire coerenza dei dati. Ecco le principali:
+
+- **Registrazione**: il nome non può essere vuoto, l'email deve contenere `@` e la password deve avere almeno 6 caratteri.
+- **Login**: l'email deve essere valida e la password non può essere vuota.
+- **Nuovo Task**:
+  - Il **titolo** è obbligatorio.
+  - La **data di scadenza** è obbligatoria e **non può essere nel passato** (oggi incluso è consentito).
+- **Nuova Abitudine**:
+  - Il **nome** è obbligatorio.
+  - Il **target giornaliero** (quantità o minuti) deve essere un **numero intero positivo**.
+
+Se uno di questi vincoli non è rispettato, l'invio del form viene bloccato lato client e viene visualizzato un messaggio di errore. Lato server, in caso di dati non validi, l'API restituisce un oggetto con `errorCode: VALIDATION_ERROR` e una mappa dei campi con il relativo errore.
+
+Nel caso in cui il backend restituisca un errore di validazione, il frontend mappa i messaggi ai campi del form. Altri errori di autenticazione o di business verranno mostrati come messaggio generale.
+
+5. **Installa le dipendenze**.
 
    ```bash
    cd ../apps/web
    npm install
    ```
 
-5. **Avvia l'applicazione in sviluppo**.
+6. **Avvia l'applicazione in sviluppo**.
 
    ```bash
    npm run dev
@@ -126,6 +161,7 @@ VITA è progettata per essere facilmente deployata su [Vercel](https://vercel.co
 - [x] Predisposizione per entitlements e feature flags (tabelle nel DB)
 - [x] Docker Compose per Postgres in locale
 - [x] CI minimale con GitHub Actions (build)
+ - [x] Validazioni client/server per registrazione, login, task e abitudini (campi obbligatori, password minima, date non nel passato)
 - [ ] Valutazione UI finale e miglioramento dello stile
 - [ ] Integrazione moduli premium (fase successiva)
 

@@ -7,11 +7,20 @@ export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+
+  // Client-side validation
+  const isEmailValid = email.trim().length > 0 && email.includes('@');
+  const isPasswordProvided = password.trim().length > 0;
+  const isFormValid = isEmailValid && isPasswordProvided;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    // Prevent submit if invalid or already submitting
+    if (!isFormValid || submitting) return;
+    setSubmitting(true);
+    setErrors({});
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -20,23 +29,33 @@ export default function Login() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Errore di autenticazione');
+        // Map validation errors
+        if (data.errorCode === 'VALIDATION_ERROR' && data.fields) {
+          setErrors(data.fields);
+        } else if (data.errorCode === 'INVALID_CREDENTIALS') {
+          setErrors({ form: data.message || 'Email o password non validi' });
+        } else {
+          setErrors({ form: data.message || 'Errore di autenticazione' });
+        }
+        setSubmitting(false);
         return;
       }
-      // Salva il token nel localStorage
+      // Save token
       if (typeof window !== 'undefined') {
         localStorage.setItem('vita-token', data.token);
       }
       router.push('/dashboard');
     } catch (err) {
-      setError('Si è verificato un errore. Riprova.');
+      setErrors({ form: 'Si è verificato un errore. Riprova.' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
     <main className="container" style={{ maxWidth: '400px', marginTop: '3rem' }}>
       <h2>Accedi a VITA</h2>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {errors.form && <p style={{ color: 'red' }}>{errors.form}</p>}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
         <label htmlFor="email" style={{ marginTop: '1rem' }}>Email</label>
         <input
@@ -44,19 +63,35 @@ export default function Login() {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          required
           style={inputStyle}
         />
+        {!isEmailValid && email && (
+          <small style={{ color: 'red' }}>Inserisci un'email valida</small>
+        )}
+        {errors.email && (
+          <small style={{ color: 'red' }}>{errors.email.join(', ')}</small>
+        )}
         <label htmlFor="password" style={{ marginTop: '1rem' }}>Password</label>
         <input
           id="password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          required
           style={inputStyle}
         />
-        <button type="submit" style={{ ...buttonStyle, marginTop: '1.5rem' }}>Accedi</button>
+        {!isPasswordProvided && password && (
+          <small style={{ color: 'red' }}>La password è obbligatoria</small>
+        )}
+        {errors.password && (
+          <small style={{ color: 'red' }}>{errors.password.join(', ')}</small>
+        )}
+        <button
+          type="submit"
+          style={{ ...buttonStyle, marginTop: '1.5rem', opacity: isFormValid && !submitting ? 1 : 0.5 }}
+          disabled={!isFormValid || submitting}
+        >
+          {submitting ? 'Accesso…' : 'Accedi'}
+        </button>
       </form>
     </main>
   );

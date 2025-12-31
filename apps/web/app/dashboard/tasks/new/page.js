@@ -8,11 +8,29 @@ export default function NewTask() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+
+  // Validazione client
+  const isTitleValid = title.trim().length > 0;
+  const isDueProvided = dueDate.trim().length > 0;
+  // La data non può essere nel passato (oggi incluso è valido)
+  const isDueValid = (() => {
+    if (!isDueProvided) return false;
+    const date = new Date(dueDate);
+    if (Number.isNaN(date.getTime())) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date >= today;
+  })();
+  const isFormValid = isTitleValid && isDueProvided && isDueValid;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    // prevenire invio se invalido o in invio
+    if (!isFormValid || submitting) return;
+    setSubmitting(true);
+    setErrors({});
     const token = typeof window !== 'undefined' ? localStorage.getItem('vita-token') : null;
     try {
       const res = await fetch('/api/tasks', {
@@ -25,19 +43,27 @@ export default function NewTask() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Errore nella creazione del task');
+        // Mappa errori dal backend
+        if (data.errorCode === 'VALIDATION_ERROR' && data.fields) {
+          setErrors(data.fields);
+        } else {
+          setErrors({ form: data.message || data.error || 'Errore nella creazione del task' });
+        }
+        setSubmitting(false);
         return;
       }
       router.push('/dashboard');
     } catch (err) {
-      setError('Errore di rete');
+      setErrors({ form: 'Errore di rete' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
     <main className="container" style={{ maxWidth: '500px', marginTop: '2rem' }}>
       <h2>Nuovo Task</h2>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {errors.form && <p style={{ color: 'red' }}>{errors.form}</p>}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
         <label htmlFor="title" style={{ marginTop: '1rem' }}>Titolo</label>
         <input
@@ -45,9 +71,14 @@ export default function NewTask() {
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          required
           style={inputStyle}
         />
+        {!isTitleValid && title && (
+          <small style={{ color: 'red' }}>Il titolo è obbligatorio</small>
+        )}
+        {errors.title && (
+          <small style={{ color: 'red' }}>{errors.title.join(', ')}</small>
+        )}
         <label htmlFor="description" style={{ marginTop: '1rem' }}>Descrizione</label>
         <textarea
           id="description"
@@ -64,7 +95,22 @@ export default function NewTask() {
           onChange={(e) => setDueDate(e.target.value)}
           style={inputStyle}
         />
-        <button type="submit" style={{ ...buttonStyle, marginTop: '1.5rem' }}>Salva</button>
+        {!isDueProvided && dueDate === '' && (
+          <small style={{ color: 'red' }}>La data di scadenza è obbligatoria</small>
+        )}
+        {isDueProvided && !isDueValid && (
+          <small style={{ color: 'red' }}>La data non può essere nel passato</small>
+        )}
+        {errors.due_date && (
+          <small style={{ color: 'red' }}>{errors.due_date.join(', ')}</small>
+        )}
+        <button
+          type="submit"
+          style={{ ...buttonStyle, marginTop: '1.5rem', opacity: isFormValid && !submitting ? 1 : 0.5 }}
+          disabled={!isFormValid || submitting}
+        >
+          {submitting ? 'Salvataggio…' : 'Salva'}
+        </button>
       </form>
     </main>
   );
